@@ -34,6 +34,29 @@ class ExposureInfo {
   ExposureInfo(this.attenuationValue, this.date, this.duration);
 }
 
+/// The key used to generate Rolling Proximity Identifiers.
+class ExposureKey {
+  /// This property contains the Temporary Exposure Key information.
+  final String keyData;
+
+  /// This property contains the interval number when the key's TKRollingPeriod started.
+  final int rollingStartNumber;
+
+  ExposureKey(this.keyData, this.rollingStartNumber);
+
+  /// See: https://covid19-static.cdn-apple.com/applications/covid19/current/static/contact-tracing/pdf/ExposureNotification-CryptographySpecificationv1.1.pdf
+  DateTime get timestamp =>
+      DateTime.fromMillisecondsSinceEpoch(rollingStartNumber * 60 * 24 * 1000);
+
+  Map<String, dynamic> toMap() {
+    return {
+      'keyData': keyData,
+      'rollingStartNumber': rollingStartNumber,
+      'timestamp': timestamp,
+    };
+  }
+}
+
 /// A typedef that represents the error codes in the framework.
 enum ErrorCode {
   Success,
@@ -157,10 +180,12 @@ class GactPlugin {
   /// old.
   /// The app must have previously enabled Exposure Notification through the settings API (which requires
   /// approval by the user). If the app hasn't done that, this request fails with ENErrorCodeNotEnabled.
-  static Future<List<String>> getExposureKeys() async {
-    List<String> keys = await _channel.invokeMethod('getExposureKeys');
+  static Future<List<ExposureKey>> getExposureKeys() async {
+    List<Map<String, dynamic>> keys =
+        await _channel.invokeMethod('getExposureKeys');
 
-    return keys;
+    return keys
+        .map((key) => ExposureKey(key["keyData"], key["rollingStartNumber"]));
   }
 
   /// Deletes all collected exposure data and Temporary Exposure Keys.

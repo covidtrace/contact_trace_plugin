@@ -81,7 +81,7 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
 
     When the app is done with the session, call invalidate. 
     */
-    var keys = call.arguments as? Array<String>
+    var keys = call.arguments as? Array<Dictionary<String, Any>>
 
     // Arguments to set on session class
     // attenuationThreshold = 0
@@ -103,7 +103,7 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     6. Call invalidate.
     */
 
-    result(nil)
+    result([])
   }
 
   /// Deletes all collected exposure data and Temporary Exposure Keys. 
