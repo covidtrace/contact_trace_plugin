@@ -19,10 +19,6 @@ class DetectionSummary {
 
 /// Contains information about a single contact incident.
 class ExposureInfo {
-  /// This property holds the attenuation value of the peer device at the time the exposure occurred. The
-  /// attenuation is the Reported Transmit Power - Measured RSSI.
-  final int attenuationValue;
-
   /// This property holds the date when the exposure occurred. The date may have reduced precision, such as
   /// within one day of the actual time.
   final DateTime date;
@@ -31,7 +27,11 @@ class ExposureInfo {
   /// duration is 5 minutes. Other valid values are 10, 15, 20, 25, and 30. The duration is capped at 30 minutes.
   final Duration duration;
 
-  ExposureInfo(this.attenuationValue, this.date, this.duration);
+  /// This property holds the attenuation value of the peer device at the time the exposure occurred. The
+  /// attenuation is the Reported Transmit Power - Measured RSSI.
+  final int attenuationValue;
+
+  ExposureInfo(this.date, this.duration, this.attenuationValue);
 }
 
 /// The key used to generate Rolling Proximity Identifiers.
@@ -46,7 +46,7 @@ class ExposureKey {
 
   /// See: https://covid19-static.cdn-apple.com/applications/covid19/current/static/contact-tracing/pdf/ExposureNotification-CryptographySpecificationv1.1.pdf
   DateTime get timestamp =>
-      DateTime.fromMillisecondsSinceEpoch(rollingStartNumber * 60 * 24 * 1000);
+      DateTime.fromMillisecondsSinceEpoch(rollingStartNumber * 60 * 10 * 1000);
 
   Map<String, dynamic> toMap() {
     return {
@@ -162,12 +162,15 @@ class GactPlugin {
   }
 
   /// Performs exposure detection based on previously collected proximity data and keys.
-  static Future<DetectionSummary> checkExposure(List<String> keys) async {
-    Map<String, dynamic> summary =
-        await _channel.invokeMethod('checkExposure', keys);
+  static Future<List<ExposureInfo>> checkExposure(
+      List<ExposureKey> keys) async {
+    List<Map<dynamic, dynamic>> exposures = await _channel.invokeMethod(
+        'checkExposure', keys.map((k) => k.toMap()));
 
-    return DetectionSummary(
-        summary['daysSinceLastExposure'], summary['matchedKeyCount']);
+    return exposures
+        .map((e) => ExposureInfo(DateTime.parse(e["date"]),
+            Duration(minutes: e["duration"]), e["attenuationValue"]))
+        .toList();
   }
 
   /// Requests the Temporary Exposure Keys used by this device to share with a server.

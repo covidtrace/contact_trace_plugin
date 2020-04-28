@@ -87,7 +87,7 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     // attenuationThreshold = 0
     // durationThreshold = 5 minutes
 
-    result(nil)
+    result([])
   }
 
   // Requests the Temporary Exposure Keys used by this device to share with a server.
