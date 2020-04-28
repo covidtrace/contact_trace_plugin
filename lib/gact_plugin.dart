@@ -52,7 +52,6 @@ class ExposureKey {
     return {
       'keyData': keyData,
       'rollingStartNumber': rollingStartNumber,
-      'timestamp': timestamp,
     };
   }
 }
@@ -168,8 +167,10 @@ class GactPlugin {
         'checkExposure', keys.map((k) => k.toMap()).toList());
 
     return exposures
-        .map((e) => ExposureInfo(DateTime.parse(e["date"]),
-            Duration(minutes: e["duration"]), e["attenuationValue"]))
+        .map((e) => ExposureInfo(
+            DateTime.fromMillisecondsSinceEpoch(e["date"].toInt() * 1000),
+            Duration(minutes: e["duration"]),
+            e["attenuationValue"]))
         .toList();
   }
 
@@ -186,8 +187,8 @@ class GactPlugin {
   static Future<Iterable<ExposureKey>> getExposureKeys() async {
     List<dynamic> keys = await _channel.invokeMethod('getExposureKeys');
 
-    return keys
-        .map((key) => ExposureKey(key["keyData"], key["rollingStartNumber"]));
+    return keys.map((key) =>
+        ExposureKey(key["keyData"], key["rollingStartNumber"].toInt()));
   }
 
   /// Deletes all collected exposure data and Temporary Exposure Keys.

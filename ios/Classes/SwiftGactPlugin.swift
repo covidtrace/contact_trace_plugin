@@ -87,7 +87,8 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     // attenuationThreshold = 0
     // durationThreshold = 5 minutes
 
-    result([])
+    let exposure = ["date": Date().timeIntervalSince1970, "duration": 5, "attenuationValue": 0] as [String:Any]
+    result([exposure])
   }
 
   // Requests the Temporary Exposure Keys used by this device to share with a server.
@@ -103,7 +104,8 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     6. Call invalidate.
     */
 
-    result([])
+    let key = ["keyData": UUID().uuidString, "rollingStartNumber": Date().timeIntervalSince1970 / 600 / 144 * 144] as [String:Any]
+    result([key])
   }
 
   /// Deletes all collected exposure data and Temporary Exposure Keys. 
