@@ -164,8 +164,8 @@ class GactPlugin {
   /// Performs exposure detection based on previously collected proximity data and keys.
   static Future<List<ExposureInfo>> checkExposure(
       List<ExposureKey> keys) async {
-    List<Map<dynamic, dynamic>> exposures = await _channel.invokeMethod(
-        'checkExposure', keys.map((k) => k.toMap()));
+    List<dynamic> exposures = await _channel.invokeMethod(
+        'checkExposure', keys.map((k) => k.toMap()).toList());
 
     return exposures
         .map((e) => ExposureInfo(DateTime.parse(e["date"]),
