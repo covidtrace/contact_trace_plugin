@@ -180,9 +180,8 @@ class GactPlugin {
   /// old.
   /// The app must have previously enabled Exposure Notification through the settings API (which requires
   /// approval by the user). If the app hasn't done that, this request fails with ENErrorCodeNotEnabled.
-  static Future<List<ExposureKey>> getExposureKeys() async {
-    List<Map<String, dynamic>> keys =
-        await _channel.invokeMethod('getExposureKeys');
+  static Future<Iterable<ExposureKey>> getExposureKeys() async {
+    List<dynamic> keys = await _channel.invokeMethod('getExposureKeys');
 
     return keys
         .map((key) => ExposureKey(key["keyData"], key["rollingStartNumber"]));

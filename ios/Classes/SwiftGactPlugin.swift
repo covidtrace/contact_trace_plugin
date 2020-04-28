@@ -107,7 +107,7 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
   }
 
   /// Deletes all collected exposure data and Temporary Exposure Keys. 
-  private func getExposureKeys(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+  private func reset(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
     // Use ENSelfExposureResetRequest
     result(nil)
   }
