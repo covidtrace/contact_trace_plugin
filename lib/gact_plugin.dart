@@ -155,9 +155,9 @@ class GactPlugin {
     return value;
   }
 
-  /// Changes settings for Exposure Notification after authorization by the user.
-  static Future<void> setSettings(Map<String, dynamic> options) async {
-    await _channel.invokeMethod('setSettings', options);
+  /// Changes settings to enable Exposure Notification after authorization by the user.
+  static Future<void> startTracing() async {
+    await _channel.invokeMethod('startTracing');
   }
 
   /// Performs exposure detection based on previously collected proximity data and keys.

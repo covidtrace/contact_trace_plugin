@@ -1,11 +1,32 @@
 import Flutter
 import UIKit
+import ExposureNotification
 
+@available(iOS 13.4, *)
 public class SwiftGactPlugin: NSObject, FlutterPlugin {
+  private static var instance: SwiftGactPlugin = SwiftGactPlugin();
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "com.covidtrace/gact_plugin", binaryMessenger: registrar.messenger())
-    let instance = SwiftGactPlugin()
+    // instance = SwiftGactPlugin()
+    print("REGISTER \(instance)")
     registrar.addMethodCallDelegate(instance, channel: channel)
+  }
+
+  private var manager: ENManager;
+
+  override init() {
+    print("Initialized SwiftGactPlugin")
+    self.manager = ENManager()
+    self.manager.activate { error in
+      if error != nil {
+        print("Error activating manager: \(error)")
+      }
+    }
+  }
+
+  deinit {
+    print("SwiftGactPlugin destroyed")
   }
 
   private func getAuthorizationStatus(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -34,24 +55,26 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
   }
 
 
-  // Changes settings for Exposure Notification after authorization by the user. 
-  private func setSettings(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    1. Create an instance of ETMutableSettings (or call mutableCopy on an immutable ENSettings
-       instance).
-    2. Set properties of the settings instance to change any settings.
-    3. Create an instance of ENSettingsChangeRequest.
-    4. Set the settings property to the settings instance.
-    5. Optionally set the dispatch queue if you want the completion handler to be invoked on something other
-       than the main queue.
-    6. Call activateWithCompletion to asynchronously change settings if authorized by the user.
-       Authorization happens when activateWithCompletion is called. The user may be prompted at this
-       point.
-    7. When the activation completes successfully, the new settings are applied.
-    8. Call invalidate. 
-    */
+  // Changes settings to enable Exposure Notification after authorization by the user. 
+  private func startTracing(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    print("startTracing \(self.manager.exposureNotificationEnabled) \(ENManager.authorizationStatus)")
 
-    var options = call.arguments as? Dictionary<String, Any>
+    guard !self.manager.exposureNotificationEnabled else {
+      print("returning early")
+      result(nil)
+      return
+    }
+
+    self.manager.setExposureNotificationEnabled(true) {err in 
+      print("Completed setExposureNotificationEnabled")
+
+      guard err != nil else {
+        print("ENABLE ERROR: \(err)")
+        result(err)
+        return
+      }
+    }
+
     result(nil)
   }
 
@@ -104,14 +127,34 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     6. Call invalidate.
     */
 
-    let key = ["keyData": UUID().uuidString, "rollingStartNumber": Date().timeIntervalSince1970 / 600 / 144 * 144] as [String:Any]
-    result([key])
+    // let key = ["keyData": UUID().uuidString, "rollingStartNumber": Date().timeIntervalSince1970 / 600 / 144 * 144] as [String:Any]
+    // result([key])
+    self.manager.getDiagnosisKeys { keys, error in
+      print("Got diagnosis keys? \(keys)")
+
+      guard error == nil else {
+        print("Error getting diagnonis keys \(error)")
+        result([])
+        return
+      }
+
+      print("Got diagnosis keys \(keys)")
+      result(keys)
+    }
   }
 
   /// Deletes all collected exposure data and Temporary Exposure Keys. 
   private func reset(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    // Use ENSelfExposureResetRequest
-    result(nil)
+    /*
+    let request = ENSelfExposureResetRequest()
+    request.activateWithCompletion { _ in
+      defer {
+        request.invalidate()
+      }
+
+      result(nil)
+    }
+    */
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -124,8 +167,8 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
       getAuthorizationMode(call, result)
     case "getSettings":
       getSettings(call, result)
-    case "setSettings":
-      setSettings(call, result)
+    case "startTracing":
+      startTracing(call, result)
     case "checkExposure":
       checkExposure(call, result)
     case "getExposureKeys":
