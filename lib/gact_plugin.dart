@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io' as io;
 
 import 'package:flutter/services.dart';
+import 'package:gact_plugin/diagnosisKeyURL.pb.dart';
 
 /// See https://covid19-static.cdn-apple.com/applications/covid19/current/static/contact-tracing/pdf/ExposureNotification-FrameworkDocumentationv1.1.pdf
 /// for details on the Apple API
@@ -42,7 +45,12 @@ class ExposureKey {
   /// This property contains the interval number when the key's TKRollingPeriod started.
   final int rollingStartNumber;
 
-  ExposureKey(this.keyData, this.rollingStartNumber);
+  final int rollingPeriod;
+
+  final int transmissionRiskLevel;
+
+  ExposureKey(this.keyData, this.rollingPeriod, this.rollingStartNumber,
+      this.transmissionRiskLevel);
 
   /// See: https://covid19-static.cdn-apple.com/applications/covid19/current/static/contact-tracing/pdf/ExposureNotification-CryptographySpecificationv1.1.pdf
   DateTime get timestamp =>
@@ -51,7 +59,9 @@ class ExposureKey {
   Map<String, dynamic> toMap() {
     return {
       'keyData': keyData,
+      'rollingPeriod': rollingPeriod,
       'rollingStartNumber': rollingStartNumber,
+      'transmissionRiskLevel': transmissionRiskLevel,
     };
   }
 }
@@ -71,24 +81,6 @@ enum ErrorCode {
   APIMisuse,
   Internal,
   InsufficientMemory
-}
-
-/// An enumeration that specifies the app's preference for authorization with Exposure Notification.
-enum AuthorizationMode {
-  /// Let the system choose whether to prompt. This is the best option unless you have specific needs. For most
-  /// cases, it will prompt the user to authorize (same as `AuthorizationMode.UI`). This gives the system
-  /// some flexibility, such as not to prompt if the app is in the background.
-  Default,
-
-  /// Authorization will be checked, but it won't prompt the user if the app isn't authorized. If the app is
-  /// authorized, the app is allowed to use the service. If the user hasn't been prompted or they denied the app,
-  /// operations will fail with `ErrorCode.NotAuthorized`.
-  NonUI,
-
-  /// Authorization will be checked and it will prompt the user to authorize, if needed. If the app is authorized by
-  /// the user, the app is allowed to use the service. If the user denies the app, operations will fail with
-  /// `ErrorCode.NotAuthorized`.
-  UI,
 }
 
 /// An enumeration that indicates the status of authorization for the app.
@@ -133,38 +125,15 @@ class GactPlugin {
     }
   }
 
-  /// This property specifies the app's preference for authorization with Exposure Notification. It defaults to
-  /// prompting the user to authorize, if needed.
-  static Future<AuthorizationMode> get authorizationMode async {
-    int mode = await _channel.invokeMethod('getAuthorizationMode');
-
-    switch (mode) {
-      case 1:
-        return AuthorizationMode.NonUI;
-      case 2:
-        return AuthorizationMode.UI;
-      default:
-        return AuthorizationMode.Default;
-    }
-  }
-
-  /// Requests the current settings for Exposure Notification.
-  static Future<Map<dynamic, dynamic>> get settings async {
-    Map<dynamic, dynamic> value = await _channel.invokeMethod('getSettings');
-
-    return value;
-  }
-
-  /// Changes settings to enable Exposure Notification after authorization by the user.
+  /// Enables exposure notification.
   static Future<void> startTracing() async {
     await _channel.invokeMethod('startTracing');
   }
 
-  /// Performs exposure detection based on previously collected proximity data and keys.
-  static Future<List<ExposureInfo>> checkExposure(
-      List<ExposureKey> keys) async {
+  /// Detects exposures using the specified configuration to control the scoring algorithm.
+  static Future<List<ExposureInfo>> detectExposures(List<Uri> keyFiles) async {
     List<dynamic> exposures = await _channel.invokeMethod(
-        'checkExposure', keys.map((k) => k.toMap()).toList());
+        'detectExposures', keyFiles.map((u) => u.toFilePath()).toList());
 
     return exposures
         .map((e) => ExposureInfo(
@@ -174,27 +143,37 @@ class GactPlugin {
         .toList();
   }
 
-  /// Requests the Temporary Exposure Keys used by this device to share with a server.
+  /// Requests the temporary exposure keys from the user’s device to share with a server.
   ///
-  /// This request is intended to be called when a user has received a positive diagnosis. Once the keys are
-  /// shared with a server, other users can use the keys to check if their device has been in close proximity with
-  /// any positively diagnosed users, enough to cause an exposure incident. Each request results in the user
-  /// being notified by the operating system.
-  /// Keys are reported for the previous 14 days of exposure notification. The returned keys are at least 24 hours
-  /// old.
-  /// The app must have previously enabled Exposure Notification through the settings API (which requires
-  /// approval by the user). If the app hasn't done that, this request fails with ENErrorCodeNotEnabled.
+  /// Note: Each time you call this method, the system presents an interface requesting authorization.
   static Future<Iterable<ExposureKey>> getExposureKeys() async {
-    List<dynamic> keys = await _channel.invokeMethod('getExposureKeys');
+    String result = await _channel.invokeMethod('getExposureKeys');
+    List<dynamic> keys = result != null ? jsonDecode(result) : [];
 
-    return keys.map((key) =>
-        ExposureKey(key["keyData"], key["rollingStartNumber"].toInt()));
+    return keys.map((key) => ExposureKey(
+        key["keyData"],
+        key["rollingPeriod"].toInt(),
+        key["rollingStartNumber"].toInt(),
+        key["transmissionRiskLevel"]));
   }
 
-  /// Deletes all collected exposure data and Temporary Exposure Keys.
-  /// Note: This object eliminates the ability to detect exposure that may have occurred before the point of
-  /// reset. Each request prompts the user to authorize the request.
-  static Future<void> reset() async {
-    await _channel.invokeMethod('reset');
+  static Future<void> saveExposureKeyFile(
+      Iterable<ExposureKey> keys, io.File fileHandle) async {
+    var file = File.create();
+    keys.forEach((ek) {
+      var key = Key();
+      key.keyData = base64.decode(ek.keyData);
+      key.rollingPeriod = ek.rollingPeriod;
+      key.rollingStartNumber = ek.rollingStartNumber;
+      key.transmissionRiskLevel = ek.transmissionRiskLevel;
+
+      file.key.add(key);
+    });
+
+    if (!await fileHandle.exists()) {
+      await fileHandle.create(recursive: true);
+    }
+
+    await fileHandle.writeAsBytes(file.writeToBuffer());
   }
 }

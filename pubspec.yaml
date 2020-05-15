@@ -1,6 +1,6 @@
 name: gact_plugin
-description: A flutter plugin that exposes the Google/Apple Bluetooth contact tracing API.
-version: 0.0.1
+description: A flutter plugin that exposes the Google/Apple Exposure Notification API.
+version: 0.0.2
 author:
 homepage:
 
@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  protobuf:
+  protoc_plugin:
 
 dev_dependencies:
   flutter_test:

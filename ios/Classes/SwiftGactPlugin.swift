@@ -2,58 +2,74 @@ import Flutter
 import UIKit
 import ExposureNotification
 
-@available(iOS 13.4, *)
+struct CodableDiagnosisKey: Codable, Equatable {
+    let keyData: Data
+    let rollingPeriod: ENIntervalNumber
+    let rollingStartNumber: ENIntervalNumber
+    let transmissionRiskLevel: ENRiskLevel
+}
+
+struct CodableExposureConfiguration: Codable {
+    let minimumRiskScore: ENRiskScore
+    let attenuationLevelValues: [ENRiskLevelValue]
+    let attenuationWeight: Double
+    let daysSinceLastExposureLevelValues: [ENRiskLevelValue]
+    let daysSinceLastExposureWeight: Double
+    let durationLevelValues: [ENRiskLevelValue]
+    let durationWeight: Double
+    let transmissionRiskLevelValues: [ENRiskLevelValue]
+    let transmissionRiskWeight: Double
+}
+
+struct Exposure: Codable {
+    let date: Date
+    let duration: TimeInterval
+    let totalRiskScore: ENRiskScore
+    let transmissionRiskLevel: ENRiskLevel
+}
+
+@available(iOS 13.5, *)
 public class SwiftGactPlugin: NSObject, FlutterPlugin {
   private static var instance: SwiftGactPlugin = SwiftGactPlugin();
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "com.covidtrace/gact_plugin", binaryMessenger: registrar.messenger())
-    // instance = SwiftGactPlugin()
-    print("REGISTER \(instance)")
+    print("REGISTERED \(instance)")
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
 
-  private var manager: ENManager;
+  let manager = ENManager();
 
   override init() {
+    super.init()
     print("Initialized SwiftGactPlugin")
-    self.manager = ENManager()
-    self.manager.activate { error in
+    manager.activate { error in
       if error != nil {
         print("Error activating manager: \(error)")
       }
+
+      // Ensure exposure notifications are enabled if the app is authorized. The app
+      // could get into a state where it is authorized, but exposure
+      // notifications are not enabled,  if the user initially denied Exposure Notifications
+      // during onboarding, but then flipped on the "COVID-19 Exposure Notifications" switch
+      // in Settings.
+      if ENManager.authorizationStatus == .authorized && !self.manager.exposureNotificationEnabled {
+        self.manager.setExposureNotificationEnabled(true) { _ in
+            // No error handling for attempts to enable on launch
+        }
+      }
     }
+
   }
 
   deinit {
     print("SwiftGactPlugin destroyed")
+    manager.invalidate()
   }
 
   private func getAuthorizationStatus(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    result(1) //  ENAuthorizable.authorizationStatus
+    result(ENManager.authorizationStatus)
   }
-
-  private func getAuthorizationMode(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    result(0) //  ENAuthorizable.authorizationMode
-  }
-
-  // Requests the current settings for Exposure Notification. 
-  private func getSettings(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    1. Create an instance of ENSettingsGetRequest.
-    2. Optionally set the dispatch queue if you want the completion handler to be invoked on something other
-       than the main queue.
-    3. Call activateWithCompletion to asynchronously get settings from the system.
-    4. When the activation completes successfully, the settings property is valid to access.
-    5. Access the needed information in the settings object. You may retain it for use after invalidating the
-       request, if needed.
-    6. Call invalidate.
-    */
-
-    // Resulting values has `settings` object with `enableState` Boolean. use a Dictionary for serialization to `result`
-    result(["settings": ["enableState": true]])
-  }
-
 
   // Changes settings to enable Exposure Notification after authorization by the user. 
   private func startTracing(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -68,7 +84,7 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     self.manager.setExposureNotificationEnabled(true) {err in 
       print("Completed setExposureNotificationEnabled")
 
-      guard err != nil else {
+      guard err == nil else {
         print("ENABLE ERROR: \(err)")
         result(err)
         return
@@ -79,82 +95,87 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
   }
 
   // Performs exposure detection based on previously collected proximity data and keys. 
-  private func checkExposure(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    1. Create an instance of ENExposureDetectionSession.
-    2. Optionally, set the dispatch queue if you want the completion handler to be invoked on something other
-       than the main queue.
-    3. Call activateWithCompletion to asynchronously prepare the session for use.
-    4. Wait for the completion handler for activateWithCompletion to be invoked with a nil error.
-    5. Call addDiagnosisKeys with up to maxKeyCount keys.
-    6. Wait for the completion handler for addDiagnosisKeys to be invoked with a nil error.
-    7. Repeat the previous two steps until all keys are provided to the system or an error occurs.
-    8. Call finishedDiagnosisKeysWithCompletion.
-    9. Wait for the completion handler for finishedDiagnosisKeysWithCompletion to be invoked with a
-       nil error.
+  private func detectExposures(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    var filePaths = call.arguments as! [String]
+    var localURLs = filePaths.map { path in
+      return URL(string: path)!  
+    }
 
-    If the summary indicates matches were found, notify the user of exposure. If the user is interested in
-    sharing more details with the app:
+    // TODO(wes): Accept configuration as methodChannel call
+    var configuration = ENExposureConfiguration()
+    configuration.minimumRiskScore = 0
+    configuration.attenuationLevelValues = [1, 2, 3, 4, 5, 6, 7, 8]
+    configuration.attenuationWeight = 50
+    configuration.daysSinceLastExposureLevelValues = [1, 2, 3, 4, 5, 6, 7, 8]
+    configuration.daysSinceLastExposureWeight = 50
+    configuration.durationLevelValues = [1, 2, 3, 4, 5, 6, 7, 8]
+    configuration.durationWeight = 50
+    configuration.transmissionRiskLevelValues = [1, 2, 3, 4, 5, 6, 7, 8]
+    configuration.transmissionRiskWeight = 50
 
-      1. Call getExposureInfoWithMaxCount. Use a reasonable maximum count, such as 100.
-      2. Wait for the completion handler for getExposureInfoWithMaxCount to be invoked with a nil
-         error.
-      3. If the value of the completion handler's inDone parameter is NO, repeat the previous two steps
-         until the value is YES or an error occurs.
+    self.manager.detectExposures(configuration: configuration, diagnosisKeyURLs: localURLs) { summary, error in
+      if let error = error {
+        result(error)
+        return
+      }
 
-    When the app is done with the session, call invalidate. 
-    */
-    var keys = call.arguments as? Array<Dictionary<String, Any>>
+      let userExplanation = "A string that the framework displays to the user informing them of the exposure."
+      self.manager.getExposureInfo(summary: summary!, userExplanation: userExplanation) { exposures, error in
+        if let error = error {
+          result(error)
+          return
+        }
 
-    // Arguments to set on session class
-    // attenuationThreshold = 0
-    // durationThreshold = 5 minutes
+        let newExposures = exposures!.map { exposure in
+          Exposure(date: exposure.date,
+                   duration: exposure.duration,
+                   totalRiskScore: exposure.totalRiskScore,
+                   transmissionRiskLevel: exposure.transmissionRiskLevel)
+        }
 
-    let exposure = ["date": Date().timeIntervalSince1970, "duration": 5, "attenuationValue": 0] as [String:Any]
-    result([exposure])
+        do {
+          let encoded = try JSONEncoder().encode(newExposures)
+          result(String(data: encoded, encoding: .utf8))
+        } catch {
+          result(nil)
+        }
+      }
+    }
   }
 
   // Requests the Temporary Exposure Keys used by this device to share with a server.
   private func getExposureKeys(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    1. Create an instance of ENSelfExposureInfoRequest.
-    2. Optionally set the dispatch queue if you want the completion to be invoked on something other than the
-       main queue.
-    3. Call activateWithCompletion to asynchronously start the request.
-    4. When the activation completes successfully, the selfExposureInfo property is valid to access.
-    5. Access information in the selfExposureInfo object. You may retain it for use after invalidating the
-       request, if needed.
-    6. Call invalidate.
-    */
-
-    // let key = ["keyData": UUID().uuidString, "rollingStartNumber": Date().timeIntervalSince1970 / 600 / 144 * 144] as [String:Any]
-    // result([key])
-    self.manager.getDiagnosisKeys { keys, error in
-      print("Got diagnosis keys? \(keys)")
+    // TODO(wes): Use NON Test version in release build
+    self.manager.getTestDiagnosisKeys { keys , error in
+      print("Got test diagnosis keys? \(keys)")
 
       guard error == nil else {
         print("Error getting diagnonis keys \(error)")
-        result([])
+        result(error)
         return
       }
 
-      print("Got diagnosis keys \(keys)")
-      result(keys)
-    }
-  }
-
-  /// Deletes all collected exposure data and Temporary Exposure Keys. 
-  private func reset(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    let request = ENSelfExposureResetRequest()
-    request.activateWithCompletion { _ in
-      defer {
-        request.invalidate()
+      guard keys != nil else {
+        print("no diagnosis keys")
+        result(nil)
+        return
       }
 
-      result(nil)
+      // Convert keys to something that can be encoded to JSON and upload them.
+      let codableDiagnosisKeys = keys!.compactMap { diagnosisKey -> CodableDiagnosisKey? in
+        return CodableDiagnosisKey(keyData: diagnosisKey.keyData,
+                                    rollingPeriod: diagnosisKey.rollingPeriod,
+                                    rollingStartNumber: diagnosisKey.rollingStartNumber,
+                                    transmissionRiskLevel: diagnosisKey.transmissionRiskLevel)
+      }
+      
+      do {
+        let encoded = try JSONEncoder().encode(codableDiagnosisKeys)
+        result(String(data: encoded, encoding: .utf8))
+      } catch {
+        result(nil)
+      }
     }
-    */
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -163,18 +184,12 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
       result("iOS " + UIDevice.current.systemVersion)
     case "getAuthorizationStatus":
       getAuthorizationStatus(call, result)
-    case "getAuthorizationMode":
-      getAuthorizationMode(call, result)
-    case "getSettings":
-      getSettings(call, result)
     case "startTracing":
       startTracing(call, result)
-    case "checkExposure":
-      checkExposure(call, result)
+    case "detectExposures":
+      detectExposures(call, result)
     case "getExposureKeys":
       getExposureKeys(call, result)
-    case "reset":
-      reset(call, result)
     default:
       result(FlutterMethodNotImplemented) 
     }
