@@ -20,33 +20,36 @@ class DetectionSummary {
   DetectionSummary(this.daysSinceLastExposure, this.matchedKeyCount);
 }
 
-/// Contains information about a single contact incident.
+/// This class carries information about an exposure incident.
 class ExposureInfo {
-  /// This property holds the date when the exposure occurred. The date may have reduced precision, such as
-  /// within one day of the actual time.
+  /// The date the exposure occurred.
   final DateTime date;
 
-  /// This property holds the duration (in minutes) that the contact was in proximity of the user. The minimum
-  /// duration is 5 minutes. Other valid values are 10, 15, 20, 25, and 30. The duration is capped at 30 minutes.
+  /// The length of time in minutes that the contact was in proximity to the user.
   final Duration duration;
 
-  /// This property holds the attenuation value of the peer device at the time the exposure occurred. The
-  /// attenuation is the Reported Transmit Power - Measured RSSI.
-  final int attenuationValue;
+  /// The total risk calculated for an exposure incident.
+  final int totalRiskScore;
 
-  ExposureInfo(this.date, this.duration, this.attenuationValue);
+  /// The transmission risk associated with a diagnosis key.
+  final int transmissionRiskLevel;
+
+  ExposureInfo(this.date, this.duration, this.totalRiskScore,
+      this.transmissionRiskLevel);
 }
 
 /// The key used to generate Rolling Proximity Identifiers.
 class ExposureKey {
-  /// This property contains the Temporary Exposure Key information.
+  /// The temporary exposure key information.
   final String keyData;
 
-  /// This property contains the interval number when the key's TKRollingPeriod started.
+  /// A number that indicates when a key’s rolling period started.
   final int rollingStartNumber;
 
+  /// The length of time that this key is valid.
   final int rollingPeriod;
 
+  /// The risk of transmission associated with the person a key came from.
   final int transmissionRiskLevel;
 
   ExposureKey(this.keyData, this.rollingPeriod, this.rollingStartNumber,
@@ -66,21 +69,29 @@ class ExposureKey {
   }
 }
 
-/// A typedef that represents the error codes in the framework.
+/// Errors that the exposure notification framework issues.
+/// See: https://developer.apple.com/documentation/exposurenotification/enerror
 enum ErrorCode {
-  Success,
-  Unknown,
-  BadParameter,
-  NotEntitled,
-  NotAuthorized,
-  Unsupported,
-  Invalidated,
-  BluetoothOff,
-  InsufficientStorage,
-  NotEnabled,
-  APIMisuse,
-  Internal,
-  InsufficientMemory
+  reserved, // Unused
+  unknown, // 1
+  badParameters, // 2
+  notEntitled, // 3
+  notAuthorized, // 4
+  unsupported, // 5
+  invalidated, // 6
+  bluetoothOff, // 7
+  insufficientStorage, // 8
+  notEnabled, // 9
+  apiMisuse, //  10
+  internal, // 11
+  insufficientMemory, // 12
+  rateLimited, // 13
+  restricted, // 14
+  badFormat, // 15
+}
+
+ErrorCode errorFromException(err) {
+  return ErrorCode.values[int.parse(err.code)];
 }
 
 /// An enumeration that indicates the status of authorization for the app.
@@ -126,35 +137,54 @@ class GactPlugin {
   }
 
   /// Enables exposure notification.
-  static Future<void> startTracing() async {
-    await _channel.invokeMethod('startTracing');
+  static Future<void> enableExposureNotification() async {
+    await _channel.invokeMethod('enableExposureNotification');
+  }
+
+  /// Sets the exposures configuration to control the scoring algorithm.
+  /// This method must be called before invoking `detectExposures`.
+  /// For details on specifying a configuration see:
+  /// https://developer.apple.com/documentation/exposurenotification/enexposureconfiguration
+  static Future<void> setExposureConfiguration(
+      Map<String, dynamic> config) async {
+    await _channel.invokeMethod('setExposureConfiguration', config);
+  }
+
+  static Future<void> setUserExplanation(String explanation) async {
+    await _channel.invokeMethod('setUserExplanation', explanation);
   }
 
   /// Detects exposures using the specified configuration to control the scoring algorithm.
-  static Future<List<ExposureInfo>> detectExposures(List<Uri> keyFiles) async {
-    List<dynamic> exposures = await _channel.invokeMethod(
-        'detectExposures', keyFiles.map((u) => u.toFilePath()).toList());
+  static Future<Iterable<ExposureInfo>> detectExposures(
+      List<Uri> keyFiles) async {
+    print(keyFiles);
 
-    return exposures
-        .map((e) => ExposureInfo(
-            DateTime.fromMillisecondsSinceEpoch(e["date"].toInt() * 1000),
-            Duration(minutes: e["duration"]),
-            e["attenuationValue"]))
-        .toList();
+    String result = await _channel.invokeMethod(
+        'detectExposures', keyFiles.map((u) => u.toFilePath()).toList());
+    List<dynamic> exposures = result != null ? jsonDecode(result) : [];
+
+    return exposures.map((e) => ExposureInfo(
+          DateTime.fromMillisecondsSinceEpoch(e["date"].toInt()),
+          Duration(seconds: e["duration"]),
+          e['totalRiskScore'],
+          e["transmissionRiskLevel"],
+        ));
   }
 
   /// Requests the temporary exposure keys from the user’s device to share with a server.
   ///
   /// Note: Each time you call this method, the system presents an interface requesting authorization.
-  static Future<Iterable<ExposureKey>> getExposureKeys() async {
-    String result = await _channel.invokeMethod('getExposureKeys');
+  static Future<Iterable<ExposureKey>> getExposureKeys(
+      {bool testMode = false}) async {
+    String result = await _channel.invokeMethod('getExposureKeys', testMode);
     List<dynamic> keys = result != null ? jsonDecode(result) : [];
 
     return keys.map((key) => ExposureKey(
-        key["keyData"],
-        key["rollingPeriod"].toInt(),
-        key["rollingStartNumber"].toInt(),
-        key["transmissionRiskLevel"]));
+          key["keyData"],
+          key["rollingPeriod"].toInt(),
+          key["rollingStartNumber"].toInt(),
+          key["transmissionRiskLevel"],
+        ));
   }
 
   static Future<void> saveExposureKeyFile(
