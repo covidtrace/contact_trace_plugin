@@ -81,13 +81,13 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     }
 
     self.manager.setExposureNotificationEnabled(true) {err in 
-      guard err == nil else {
-        result(nil)
+      if let err = err as? ENError {
+        result(FlutterError(code: String(err.errorCode), message: ENErrorDomain, details: err.localizedDescription))
         return
       }
-    }
 
-    result(nil)
+      result(nil)
+    }
   }
 
   // Set the Exposure Configuration that will be passed to detectExposures. This method must be

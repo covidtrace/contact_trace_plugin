@@ -137,8 +137,9 @@ class GactPlugin {
   }
 
   /// Enables exposure notification.
-  static Future<void> enableExposureNotification() async {
+  static Future<AuthorizationStatus> enableExposureNotification() async {
     await _channel.invokeMethod('enableExposureNotification');
+    return authorizationStatus;
   }
 
   /// Sets the exposures configuration to control the scoring algorithm.
