@@ -69,6 +69,24 @@ class ExposureKey {
   }
 }
 
+/// A summary of exposures.
+class ExposureSummary {
+  /// An array of durations at certain radio signal attenuations.
+  final List<Duration> attenuationDurations;
+
+  /// Number of days since the most recent exposure.
+  final int daysSinceLastExposure;
+
+  /// The number of keys that matched for an exposure detection.
+  final int matchedKeyCount;
+
+  /// The highest risk score of all exposure incidents.
+  final int maximumRiskScore;
+
+  ExposureSummary(this.attenuationDurations, this.daysSinceLastExposure,
+      this.matchedKeyCount, this.maximumRiskScore);
+}
+
 /// Errors that the exposure notification framework issues.
 /// See: https://developer.apple.com/documentation/exposurenotification/enerror
 enum ErrorCode {
@@ -158,8 +176,6 @@ class GactPlugin {
   /// Detects exposures using the specified configuration to control the scoring algorithm.
   static Future<Iterable<ExposureInfo>> detectExposures(
       List<Uri> keyFiles) async {
-    print(keyFiles);
-
     String result = await _channel.invokeMethod(
         'detectExposures', keyFiles.map((u) => u.toFilePath()).toList());
     List<dynamic> exposures = result != null ? jsonDecode(result) : [];
@@ -170,6 +186,26 @@ class GactPlugin {
           e['totalRiskScore'],
           e["transmissionRiskLevel"],
         ));
+  }
+
+  /// Returns the most recent exposure summary. This method must be called after first
+  /// invoking `detectExposures`.
+  static Future<ExposureSummary> getExposureSummary() async {
+    var result = await _channel.invokeMethod('getExposureSummary');
+    if (result == null) {
+      return null;
+    }
+
+    var summary = jsonDecode(result);
+    var durations =
+        (summary["attenuationDurations"] as List).cast<int>().toList();
+
+    return ExposureSummary(
+      durations.map((d) => Duration(seconds: d)).toList(),
+      summary["daysSinceLastExposure"],
+      summary["matchedKeyCount"],
+      summary["maximumRiskScore"],
+    );
   }
 
   /// Requests the temporary exposure keys from the user’s device to share with a server.

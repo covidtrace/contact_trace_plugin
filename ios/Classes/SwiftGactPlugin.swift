@@ -28,6 +28,13 @@ struct Exposure: Codable {
     let transmissionRiskLevel: ENRiskLevel
 }
 
+struct ExposureSummary: Codable {
+  let attenuationDurations: [Int]
+  let daysSinceLastExposure: Int
+  let matchedKeyCount: UInt64
+  let maximumRiskScore: ENRiskLevel
+}
+
 @available(iOS 13.5, *)
 public class SwiftGactPlugin: NSObject, FlutterPlugin {
   private static var instance: SwiftGactPlugin = SwiftGactPlugin();
@@ -40,6 +47,7 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
   let manager = ENManager();
   let configuration = ENExposureConfiguration()
   var userExplanation = "A string that the framework displays to the user informing them of the exposure."
+  var exposureSummary: ENExposureDetectionSummary?
 
   override init() {
     super.init()
@@ -134,6 +142,8 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
           return
         }
 
+        self.exposureSummary = summary!
+
         let newExposures = exposures!.map { exposure in
           Exposure(date: exposure.date,
                    duration: exposure.duration,
@@ -150,6 +160,28 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
           result(nil)
         }
       }
+    }
+  }
+
+  private func getExposureSummary(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    let summary = self.exposureSummary
+    guard summary != nil else {
+      result(nil)
+      return
+    }
+
+    let codable = ExposureSummary(attenuationDurations: summary!.attenuationDurations.map { duration in
+          return duration.intValue
+        },
+        daysSinceLastExposure: summary!.daysSinceLastExposure,
+        matchedKeyCount: summary!.matchedKeyCount,
+        maximumRiskScore: summary!.maximumRiskScore)
+
+    do {
+      let json = try JSONEncoder().encode(codable)
+      result(String(data: json, encoding: .utf8))
+    } catch {
+      result(nil)
     }
   }
 
@@ -207,6 +239,8 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
       enableExposureNotification(call, result)
     case "detectExposures":
       detectExposures(call, result)
+    case "getExposureSummary":
+      getExposureSummary(call, result)
     case "getExposureKeys":
       getExposureKeys(call, result)
     case "setUserExplanation":
