@@ -1,137 +1,250 @@
 import Flutter
 import UIKit
+import ExposureNotification
 
+struct CodableDiagnosisKey: Codable, Equatable {
+    let keyData: Data
+    let rollingPeriod: ENIntervalNumber
+    let rollingStartNumber: ENIntervalNumber
+    let transmissionRiskLevel: ENRiskLevel
+}
+
+struct CodableExposureConfiguration: Codable {
+    let minimumRiskScore: ENRiskScore
+    let attenuationLevelValues: [ENRiskLevelValue]
+    let attenuationWeight: Double
+    let daysSinceLastExposureLevelValues: [ENRiskLevelValue]
+    let daysSinceLastExposureWeight: Double
+    let durationLevelValues: [ENRiskLevelValue]
+    let durationWeight: Double
+    let transmissionRiskLevelValues: [ENRiskLevelValue]
+    let transmissionRiskWeight: Double
+}
+
+struct Exposure: Codable {
+    let date: Date
+    let duration: TimeInterval
+    let totalRiskScore: ENRiskScore
+    let transmissionRiskLevel: ENRiskLevel
+}
+
+struct ExposureSummary: Codable {
+  let attenuationDurations: [Int]
+  let daysSinceLastExposure: Int
+  let matchedKeyCount: UInt64
+  let maximumRiskScore: ENRiskLevel
+}
+
+@available(iOS 13.5, *)
 public class SwiftGactPlugin: NSObject, FlutterPlugin {
+  private static var instance: SwiftGactPlugin = SwiftGactPlugin();
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "com.covidtrace/gact_plugin", binaryMessenger: registrar.messenger())
-    let instance = SwiftGactPlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
 
+  let manager = ENManager();
+  let configuration = ENExposureConfiguration()
+  var userExplanation = "A string that the framework displays to the user informing them of the exposure."
+  var exposureSummary: ENExposureDetectionSummary?
+
+  override init() {
+    super.init()
+    manager.activate { err in
+      if let err = err {
+        print("Error activating manager: \(err)")
+        return
+      }
+
+      // Ensure exposure notifications are enabled if the app is authorized. The app
+      // could get into a state where it is authorized, but exposure
+      // notifications are not enabled,  if the user initially denied Exposure Notifications
+      // during onboarding, but then flipped on the "COVID-19 Exposure Notifications" switch
+      // in Settings.
+      if ENManager.authorizationStatus == .authorized && !self.manager.exposureNotificationEnabled {
+        print("Auto enabling exposure notification")
+        self.manager.setExposureNotificationEnabled(true) { _ in
+            // No error handling for attempts to enable on launch
+        }
+      }
+    }
+  }
+
+  deinit {
+    manager.invalidate()
+  }
+
   private func getAuthorizationStatus(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    result(1) //  ENAuthorizable.authorizationStatus
+    result(ENManager.authorizationStatus.rawValue)
   }
 
-  private func getAuthorizationMode(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    result(0) //  ENAuthorizable.authorizationMode
+  // Changes settings to enable Exposure Notification after authorization by the user. 
+  private func enableExposureNotification(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    print("enableExposureNotification \(self.manager.exposureNotificationEnabled) \(ENManager.authorizationStatus.rawValue)")
+
+    guard !self.manager.exposureNotificationEnabled || ENManager.authorizationStatus != .authorized else {
+      result(nil)
+      return
+    }
+
+    self.manager.setExposureNotificationEnabled(true) {err in 
+      if let err = err as? ENError {
+        result(FlutterError(code: String(err.errorCode), message: ENErrorDomain, details: err.localizedDescription))
+        return
+      }
+
+      result(nil)
+    }
   }
 
-  // Requests the current settings for Exposure Notification. 
-  private func getSettings(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    1. Create an instance of ENSettingsGetRequest.
-    2. Optionally set the dispatch queue if you want the completion handler to be invoked on something other
-       than the main queue.
-    3. Call activateWithCompletion to asynchronously get settings from the system.
-    4. When the activation completes successfully, the settings property is valid to access.
-    5. Access the needed information in the settings object. You may retain it for use after invalidating the
-       request, if needed.
-    6. Call invalidate.
-    */
+  // Set the Exposure Configuration that will be passed to detectExposures. This method must be
+  // called before invoking `detectExposures`. See:
+  // https://developer.apple.com/documentation/exposurenotification/enexposureconfiguration
+  private func setExposureConfiguration(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    let config = call.arguments as! [String: Any]
 
-    // Resulting values has `settings` object with `enableState` Boolean. use a Dictionary for serialization to `result`
-    result(["settings": ["enableState": true]])
+    self.configuration.minimumRiskScore = config["minimumRiskScore"] as! UInt8
+    self.configuration.attenuationLevelValues = config["attenuationLevelValues"] as! [NSNumber]
+    self.configuration.attenuationWeight = config["attenuationWeight"] as! Double
+    self.configuration.daysSinceLastExposureLevelValues = config["daysSinceLastExposureLevelValues"] as! [NSNumber]
+    self.configuration.daysSinceLastExposureWeight = config["daysSinceLastExposureWeight"] as! Double
+    self.configuration.durationLevelValues = config["durationLevelValues"] as! [NSNumber]
+    self.configuration.durationWeight = config["durationWeight"] as! Double
+    self.configuration.transmissionRiskLevelValues = config["transmissionRiskLevelValues"] as! [NSNumber]
+    self.configuration.transmissionRiskWeight = config["transmissionRiskWeight"] as! Double
+
+    result(nil)
   }
 
+  private func setUserExplanation(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    self.userExplanation = call.arguments as! String
 
-  // Changes settings for Exposure Notification after authorization by the user. 
-  private func setSettings(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    1. Create an instance of ETMutableSettings (or call mutableCopy on an immutable ENSettings
-       instance).
-    2. Set properties of the settings instance to change any settings.
-    3. Create an instance of ENSettingsChangeRequest.
-    4. Set the settings property to the settings instance.
-    5. Optionally set the dispatch queue if you want the completion handler to be invoked on something other
-       than the main queue.
-    6. Call activateWithCompletion to asynchronously change settings if authorized by the user.
-       Authorization happens when activateWithCompletion is called. The user may be prompted at this
-       point.
-    7. When the activation completes successfully, the new settings are applied.
-    8. Call invalidate. 
-    */
-
-    var options = call.arguments as? Dictionary<String, Any>
     result(nil)
   }
 
   // Performs exposure detection based on previously collected proximity data and keys. 
-  private func checkExposure(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    1. Create an instance of ENExposureDetectionSession.
-    2. Optionally, set the dispatch queue if you want the completion handler to be invoked on something other
-       than the main queue.
-    3. Call activateWithCompletion to asynchronously prepare the session for use.
-    4. Wait for the completion handler for activateWithCompletion to be invoked with a nil error.
-    5. Call addDiagnosisKeys with up to maxKeyCount keys.
-    6. Wait for the completion handler for addDiagnosisKeys to be invoked with a nil error.
-    7. Repeat the previous two steps until all keys are provided to the system or an error occurs.
-    8. Call finishedDiagnosisKeysWithCompletion.
-    9. Wait for the completion handler for finishedDiagnosisKeysWithCompletion to be invoked with a
-       nil error.
+  private func detectExposures(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    let filePaths = call.arguments as! [String]
+    let localURLs = filePaths.map { (path: String) -> URL in
+      return URL(fileURLWithPath: path)
+    }
 
-    If the summary indicates matches were found, notify the user of exposure. If the user is interested in
-    sharing more details with the app:
+    self.manager.detectExposures(configuration: self.configuration, diagnosisKeyURLs: localURLs) { summary, err in
+      if let err = err as? ENError {
+        result(FlutterError(code: String(err.errorCode), message: ENErrorDomain, details: err.localizedDescription))
+        return
+      }
 
-      1. Call getExposureInfoWithMaxCount. Use a reasonable maximum count, such as 100.
-      2. Wait for the completion handler for getExposureInfoWithMaxCount to be invoked with a nil
-         error.
-      3. If the value of the completion handler's inDone parameter is NO, repeat the previous two steps
-         until the value is YES or an error occurs.
+      self.manager.getExposureInfo(summary: summary!, userExplanation: self.userExplanation) { exposures, err in
+        if let err = err as? ENError {
+          result(FlutterError(code: String(err.errorCode), message: ENErrorDomain, details: err.localizedDescription))
+          return
+        }
 
-    When the app is done with the session, call invalidate. 
-    */
-    var keys = call.arguments as? Array<Dictionary<String, Any>>
+        self.exposureSummary = summary!
 
-    // Arguments to set on session class
-    // attenuationThreshold = 0
-    // durationThreshold = 5 minutes
+        let newExposures = exposures!.map { exposure in
+          Exposure(date: exposure.date,
+                   duration: exposure.duration,
+                   totalRiskScore: exposure.totalRiskScore,
+                   transmissionRiskLevel: exposure.transmissionRiskLevel)
+        }
 
-    let exposure = ["date": Date().timeIntervalSince1970, "duration": 5, "attenuationValue": 0] as [String:Any]
-    result([exposure])
+        do {
+          let encoder = JSONEncoder()
+          encoder.dateEncodingStrategy = .millisecondsSince1970
+          let json = try encoder.encode(newExposures)
+          result(String(data: json, encoding: .utf8))
+        } catch {
+          result(nil)
+        }
+      }
+    }
+  }
+
+  private func getExposureSummary(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    let summary = self.exposureSummary
+    guard summary != nil else {
+      result(nil)
+      return
+    }
+
+    let codable = ExposureSummary(attenuationDurations: summary!.attenuationDurations.map { duration in
+          return duration.intValue
+        },
+        daysSinceLastExposure: summary!.daysSinceLastExposure,
+        matchedKeyCount: summary!.matchedKeyCount,
+        maximumRiskScore: summary!.maximumRiskScore)
+
+    do {
+      let json = try JSONEncoder().encode(codable)
+      result(String(data: json, encoding: .utf8))
+    } catch {
+      result(nil)
+    }
   }
 
   // Requests the Temporary Exposure Keys used by this device to share with a server.
   private func getExposureKeys(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    /*
-    1. Create an instance of ENSelfExposureInfoRequest.
-    2. Optionally set the dispatch queue if you want the completion to be invoked on something other than the
-       main queue.
-    3. Call activateWithCompletion to asynchronously start the request.
-    4. When the activation completes successfully, the selfExposureInfo property is valid to access.
-    5. Access information in the selfExposureInfo object. You may retain it for use after invalidating the
-       request, if needed.
-    6. Call invalidate.
-    */
+    let testMode = call.arguments as! Bool;
 
-    let key = ["keyData": UUID().uuidString, "rollingStartNumber": Date().timeIntervalSince1970 / 600 / 144 * 144] as [String:Any]
-    result([key])
+    if (testMode) {
+      self.manager.getTestDiagnosisKeys { keys , error in
+        self.diagnosisKeysHandler(keys, error as? ENError, result)
+      }
+    } else {
+      self.manager.getDiagnosisKeys { keys , error in
+        self.diagnosisKeysHandler(keys, error as? ENError, result)
+      }
+    }
   }
 
-  /// Deletes all collected exposure data and Temporary Exposure Keys. 
-  private func reset(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-    // Use ENSelfExposureResetRequest
-    result(nil)
+  private func diagnosisKeysHandler(_ keys: [ENTemporaryExposureKey]?, _ err: ENError?, _ result: @escaping FlutterResult) {
+    if let err = err {
+      result(FlutterError(code: String(err.errorCode), message: ENErrorDomain, details: err.localizedDescription))
+      return
+    }
+
+    guard keys != nil else {
+      result(nil)
+      return
+    }
+
+    // Convert keys to something that can be encoded to JSON and returned by plugin.
+    let codableDiagnosisKeys = keys!.compactMap { diagnosisKey -> CodableDiagnosisKey? in
+      return CodableDiagnosisKey(keyData: diagnosisKey.keyData,
+                                  rollingPeriod: diagnosisKey.rollingPeriod,
+                                  rollingStartNumber: diagnosisKey.rollingStartNumber,
+                                  transmissionRiskLevel: diagnosisKey.transmissionRiskLevel)
+    }
+    
+    do {
+      let json = try JSONEncoder().encode(codableDiagnosisKeys)
+      result(String(data: json, encoding: .utf8))
+    } catch {
+      result(nil)
+    }
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "getPlatformVersion":
       result("iOS " + UIDevice.current.systemVersion)
+    case "setExposureConfiguration":
+      setExposureConfiguration(call, result)
     case "getAuthorizationStatus":
       getAuthorizationStatus(call, result)
-    case "getAuthorizationMode":
-      getAuthorizationMode(call, result)
-    case "getSettings":
-      getSettings(call, result)
-    case "setSettings":
-      setSettings(call, result)
-    case "checkExposure":
-      checkExposure(call, result)
+    case "enableExposureNotification":
+      enableExposureNotification(call, result)
+    case "detectExposures":
+      detectExposures(call, result)
+    case "getExposureSummary":
+      getExposureSummary(call, result)
     case "getExposureKeys":
       getExposureKeys(call, result)
-    case "reset":
-      reset(call, result)
+    case "setUserExplanation":
+      setUserExplanation(call, result)
     default:
       result(FlutterMethodNotImplemented) 
     }
