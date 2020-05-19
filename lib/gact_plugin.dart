@@ -108,8 +108,15 @@ enum ErrorCode {
   badFormat, // 15
 }
 
+const AndroidErrorCodes = {
+  17: ErrorCode.notEntitled,
+};
+
 ErrorCode errorFromException(err) {
-  return ErrorCode.values[int.parse(err.code)];
+  var code = int.parse(err.code);
+  return io.Platform.isAndroid
+      ? AndroidErrorCodes[code]
+      : ErrorCode.values[code];
 }
 
 /// An enumeration that indicates the status of authorization for the app.

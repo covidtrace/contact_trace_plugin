@@ -40,5 +40,10 @@ android {
 }
 
 dependencies {
+    api fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+    api 'com.google.android.gms:play-services-base:17.2.1'
+    api 'com.google.android.gms:play-services-basement:17.2.1'
+    api 'com.google.android.gms:play-services-tasks:17.0.2'
+
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
 }
