@@ -1,3 +1,4 @@
+import DeviceCheck
 import Flutter
 import UIKit
 import ExposureNotification
@@ -73,6 +74,16 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
 
   deinit {
     manager.invalidate()
+  }
+
+  private func getDeviceCheck(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    DCDevice.current.generateToken { token, err in
+        if let err = err {
+            result(FlutterError(code: "device_check_failed", message: err.localizedDescription, details: nil))
+        } else {
+            result(token?.base64EncodedString())
+        }
+    }
   }
 
   private func getAuthorizationStatus(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -231,6 +242,8 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     switch call.method {
     case "getPlatformVersion":
       result("iOS " + UIDevice.current.systemVersion)
+    case "getDeviceCheck":
+      getDeviceCheck(call, result)
     case "setExposureConfiguration":
       setExposureConfiguration(call, result)
     case "getAuthorizationStatus":

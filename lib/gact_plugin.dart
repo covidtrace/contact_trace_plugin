@@ -137,6 +137,10 @@ class GactPlugin {
     return version;
   }
 
+  static Future<String> get deviceCheck async {
+    return _channel.invokeMethod('getDeviceCheck');
+  }
+
   /// This property reports the current authorization status of the app and never prompts the user. It can be used
   /// by the app for preflight authorization to determine if the user may be prompted.
   static Future<AuthorizationStatus> get authorizationStatus async {
