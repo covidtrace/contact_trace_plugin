@@ -197,8 +197,9 @@ class GactPlugin {
     print('Inspecting export bin file: $uri');
     var binFile = io.File(uri.toFilePath());
     try {
-      var export =
-          TemporaryExposureKeyExport.fromBuffer(await binFile.readAsBytes());
+      // Protobuf starts after fixed 16-byte header
+      var export = TemporaryExposureKeyExport.fromBuffer(
+          (await binFile.readAsBytes()).sublist(16));
       print(export);
     } catch (err) {
       print(err);
