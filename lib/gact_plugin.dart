@@ -4,6 +4,7 @@ import 'dart:io' as io;
 
 import 'package:flutter/services.dart';
 import 'package:gact_plugin/diagnosisKeyURL.pb.dart';
+import 'package:gact_plugin/export.pb.dart';
 
 /// See https://covid19-static.cdn-apple.com/applications/covid19/current/static/contact-tracing/pdf/ExposureNotification-FrameworkDocumentationv1.1.pdf
 /// for details on the Apple API
@@ -197,6 +198,18 @@ class GactPlugin {
           e['totalRiskScore'],
           e["transmissionRiskLevel"],
         ));
+  }
+
+  static Future<void> inspectExportFile(Uri uri) async {
+    print('Inspecting export bin file: $uri');
+    var binFile = io.File(uri.toFilePath());
+    try {
+      var export =
+          TemporaryExposureKeyExport.fromBuffer(await binFile.readAsBytes());
+      print(export);
+    } catch (err) {
+      print(err);
+    }
   }
 
   /// Returns the most recent exposure summary. This method must be called after first
