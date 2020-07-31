@@ -67,6 +67,38 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
     this.channel.setMethodCallHandler(this)
   }
 
+  private fun enableExposureNotification(@NonNull result: Result) {
+    this.exposureNotification.start().addOnSuccessListener {
+      result.success(it)
+    }.addOnFailureListener {
+      val ex = it as ApiException
+      if (ex.statusCode == 6) {
+        this.result = result
+        ex.status.startResolutionForResult(this.activity, REQUEST_CODE_START_EXPOSURE_NOTIFICATION)
+      } else {
+        result.error(ex.statusCode.toString(), ex.statusMessage, null)
+      }
+    }
+  }
+
+  private fun getExposureKeys(@NonNull result: Result) {
+    this.exposureNotification.getTemporaryExposureKeyHistory().addOnSuccessListener {
+      result.success(Gson().toJson(it.map { mapOf(
+              "keyData" to Base64.encodeToString(it.keyData, Base64.NO_WRAP),
+              "rollingPeriod" to it.rollingPeriod,
+              "rollingStartNumber" to it.rollingStartIntervalNumber,
+              "transmissionRiskLevel" to it.transmissionRiskLevel) }))
+    }.addOnFailureListener {
+      val ex = it as ApiException
+      if (ex.statusCode == 6) {
+        this.result = result
+        ex.status.startResolutionForResult(this.activity, REQUEST_CODE_GET_TEMP_EXPOSURE_KEY_HISTORY)
+      } else {
+        result.error(ex.statusCode.toString(), ex.statusMessage, null)
+      }
+    }
+  }
+
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
     when (call.method) {
       "getPlatformVersion" -> result.success("Android ${Build.VERSION.RELEASE}")
@@ -79,17 +111,7 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
         }
       }
       "enableExposureNotification" -> {
-        this.exposureNotification.start().addOnSuccessListener {
-          result.success(it)
-        }.addOnFailureListener {
-          val ex = it as ApiException
-          if (ex.statusCode == 6) {
-            this.result = result
-            ex.status.startResolutionForResult(this.activity, REQUEST_CODE_START_EXPOSURE_NOTIFICATION)
-          } else {
-            result.error(ex.statusCode.toString(), ex.statusMessage, null)
-          }
-        }
+        this.enableExposureNotification(result)
       }
       "setExposureConfiguration" -> {
         val config = call.arguments as Map<String, Any>
@@ -109,21 +131,7 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
         result.success(null)
       }
       "getExposureKeys" -> {
-        this.exposureNotification.getTemporaryExposureKeyHistory().addOnSuccessListener {
-          result.success(Gson().toJson(it.map { mapOf(
-                  "keyData" to Base64.encodeToString(it.keyData, Base64.NO_WRAP),
-                  "rollingPeriod" to it.rollingPeriod,
-                  "rollingStartNumber" to it.rollingStartIntervalNumber,
-                  "transmissionRiskLevel" to it.transmissionRiskLevel) }))
-        }.addOnFailureListener {
-          val ex = it as ApiException
-          if (ex.statusCode == 6) {
-            this.result = result
-            ex.status.startResolutionForResult(this.activity, REQUEST_CODE_GET_TEMP_EXPOSURE_KEY_HISTORY)
-          } else {
-            result.error(ex.statusCode.toString(), ex.statusMessage, null)
-          }
-        }
+        this.getExposureKeys(result)
       }
       "getExposureSummary" -> {
         result.notImplemented()
@@ -163,17 +171,19 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
   }
 
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
-    return if (requestCode == REQUEST_CODE_START_EXPOSURE_NOTIFICATION) {
-     //  TODO("wes: Call enableExposureNotification again ")
-      this.result.success(resultCode == Activity.RESULT_OK)
-      true
-    } else if (requestCode == REQUEST_CODE_GET_TEMP_EXPOSURE_KEY_HISTORY) {
-      // TODO("wes: Call getTemporaryExposureKeys again ")
-      this.result.success(resultCode == Activity.RESULT_OK)
-      true
-    } else {
-      this.result.notImplemented()
-      false
+    return when (requestCode) {
+        REQUEST_CODE_START_EXPOSURE_NOTIFICATION -> {
+          if (resultCode == Activity.RESULT_OK) this.enableExposureNotification(this.result) else this.result.success(null)
+          true
+        }
+        REQUEST_CODE_GET_TEMP_EXPOSURE_KEY_HISTORY -> {
+          if (resultCode == Activity.RESULT_OK) this.getExposureKeys(this.result) else this.result.success(null)
+          true
+        }
+        else -> {
+          this.result.notImplemented()
+          false
+        }
     }
   }
 }
