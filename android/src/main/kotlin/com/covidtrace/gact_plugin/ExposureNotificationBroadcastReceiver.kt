@@ -3,6 +3,8 @@ package com.covidtrace.gact_plugin
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler
+import android.os.Looper
 import com.google.android.gms.nearby.exposurenotification.ExposureNotificationClient;
 
 /**
@@ -11,10 +13,13 @@ import com.google.android.gms.nearby.exposurenotification.ExposureNotificationCl
 public class ExposureNotificationBroadcastReceiver: BroadcastReceiver() {
 
   override fun onReceive(context: Context?, intent: Intent?) {
-     var action:String = intent?.getAction() ?: "";
+     var action:String = intent?.action ?: "";
     if (ExposureNotificationClient.ACTION_EXPOSURE_STATE_UPDATED == action
             || ExposureNotificationClient.ACTION_EXPOSURE_NOT_FOUND == action) {
       // StateUpdatedWorker.runOnce(context);
+        Handler(Looper.getMainLooper()).post {
+            // Call the desired channel message here.
+        }
     }
   }
 

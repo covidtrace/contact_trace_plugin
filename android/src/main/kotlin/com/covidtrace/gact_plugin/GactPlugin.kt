@@ -1,20 +1,19 @@
 package com.covidtrace.gact_plugin
 
+import com.google.gson.Gson
 import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.nearby.Nearby;
-import com.google.android.gms.nearby.exposurenotification.ExposureConfiguration;
-import com.google.android.gms.nearby.exposurenotification.ExposureInformation;
-import com.google.android.gms.nearby.exposurenotification.ExposureNotificationClient;
-import com.google.android.gms.nearby.exposurenotification.ExposureSummary;
-import com.google.android.gms.nearby.exposurenotification.ExposureWindow;
-import com.google.android.gms.nearby.exposurenotification.TemporaryExposureKey;
-
-import com.google.android.gms.tasks.Task;
-import com.google.android.gms.tasks.Tasks;
+import com.google.android.gms.nearby.Nearby
+import com.google.android.gms.nearby.exposurenotification.ExposureConfiguration
+import com.google.android.gms.nearby.exposurenotification.ExposureInformation
+import com.google.android.gms.nearby.exposurenotification.ExposureNotificationClient
+import com.google.android.gms.nearby.exposurenotification.ExposureSummary
+import com.google.android.gms.nearby.exposurenotification.TemporaryExposureKey
 
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent
+import android.os.Build
+import android.util.Base64
 import androidx.annotation.NonNull;
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -26,6 +25,7 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry.ActivityResultListener
 import io.flutter.plugin.common.PluginRegistry.Registrar
+import java.io.File
 
 
 const val REQUEST_CODE_START_EXPOSURE_NOTIFICATION = 1111
@@ -46,6 +46,9 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
 
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
     this.activity = binding.activity
+    binding.addActivityResultListener { requestCode, resultCode, data ->
+      this.onActivityResult(requestCode, resultCode, data)
+    }
   }
 
   companion object {
@@ -66,7 +69,7 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
 
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
     when (call.method) {
-      "getPlatformVersion" -> result.success("Android ${android.os.Build.VERSION.RELEASE}")
+      "getPlatformVersion" -> result.success("Android ${Build.VERSION.RELEASE}")
       "getAuthorizationStatus" -> {
         this.exposureNotification.isEnabled().addOnSuccessListener {
           result.success(if (it) 3 else 2)
@@ -91,22 +94,53 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
       "setExposureConfiguration" -> {
         val config = call.arguments as Map<String, Any>
 
-        this.configuration = ExposureConfiguration.ExposureConfigurationBuilder().build()
+        this.configuration = ExposureConfiguration.ExposureConfigurationBuilder()
+          .setAttenuationWeight(config["attenuationWeight"] as Int)
+          .setAttenuationScores(*(config["attenuationLevelValues"] as ArrayList<Int>).toIntArray())
+          .setDurationWeight(config["durationWeight"] as Int)
+          .setDurationScores(*(config["durationLevelValues"] as ArrayList<Int>).toIntArray())
+          .setTransmissionRiskWeight(config["transmissionRiskWeight"] as Int)
+          .setTransmissionRiskScores(*(config["transmissionRiskLevelValues"] as ArrayList<Int>).toIntArray())
+          .setDaysSinceLastExposureWeight(config["daysSinceLastExposureWeight"] as Int)
+          .setDaysSinceLastExposureScores(*(config["daysSinceLastExposureLevelValues"] as ArrayList<Int>).toIntArray())
+          .setMinimumRiskScore(config["minimumRiskScore"] as Int)
+          .build()
+
         result.success(null)
       }
       "getExposureKeys" -> {
         this.exposureNotification.getTemporaryExposureKeyHistory().addOnSuccessListener {
-          result.success(it)
+          result.success(Gson().toJson(it.map { mapOf(
+                  "keyData" to Base64.encodeToString(it.keyData, Base64.NO_WRAP),
+                  "rollingPeriod" to it.rollingPeriod,
+                  "rollingStartNumber" to it.rollingStartIntervalNumber,
+                  "transmissionRiskLevel" to it.transmissionRiskLevel) }))
         }.addOnFailureListener {
           val ex = it as ApiException
-          result.error(ex.statusCode.toString(), ex.statusMessage, null)
+          if (ex.statusCode == 6) {
+            this.result = result
+            ex.status.startResolutionForResult(this.activity, REQUEST_CODE_GET_TEMP_EXPOSURE_KEY_HISTORY)
+          } else {
+            result.error(ex.statusCode.toString(), ex.statusMessage, null)
+          }
         }
       }
       "getExposureSummary" -> {
         result.notImplemented()
       }
       "detectExposures" -> {
-        result.notImplemented()
+        val filePaths = call.arguments as List<String>
+        val localUrls = filePaths.map { File(it) }
+
+        this.exposureNotification.provideDiagnosisKeys(localUrls, this.configuration, ExposureNotificationClient.EXTRA_TOKEN).addOnSuccessListener {
+          this.result = result
+        }.addOnFailureListener {
+          val ex = it as ApiException
+          result.error(ex.statusCode.toString(), ex.statusMessage, null)
+        }
+      }
+      "setUserExplanation" -> {
+        result.success(null)
       }
       else -> result.notImplemented()
     }
@@ -129,7 +163,12 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
   }
 
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
-    return if (requestCode === REQUEST_CODE_START_EXPOSURE_NOTIFICATION) {
+    return if (requestCode == REQUEST_CODE_START_EXPOSURE_NOTIFICATION) {
+     //  TODO("wes: Call enableExposureNotification again ")
+      this.result.success(resultCode == Activity.RESULT_OK)
+      true
+    } else if (requestCode == REQUEST_CODE_GET_TEMP_EXPOSURE_KEY_HISTORY) {
+      // TODO("wes: Call getTemporaryExposureKeys again ")
       this.result.success(resultCode == Activity.RESULT_OK)
       true
     } else {
