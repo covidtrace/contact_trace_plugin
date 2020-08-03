@@ -37,7 +37,6 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
   lateinit var activity: Activity;
   lateinit var applicationContext: Context;
   lateinit var exposureNotification: ExposureNotificationClient;
-  lateinit var channel: MethodChannel;
   lateinit var result: Result;
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -58,13 +57,15 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
       instance.onAttached(registrar.context(), registrar.messenger())
       instance.activity = registrar.activity()
     }
+
+    lateinit var channel: MethodChannel;
   }
 
   fun onAttached(context: Context, messenger: BinaryMessenger) {
     this.applicationContext = context
     this.exposureNotification = Nearby.getExposureNotificationClient(this.applicationContext)
-    this.channel = MethodChannel(messenger, "com.covidtrace/gact_plugin")
-    this.channel.setMethodCallHandler(this)
+    GactPlugin.channel = MethodChannel(messenger, "com.covidtrace/gact_plugin")
+    GactPlugin.channel.setMethodCallHandler(this)
   }
 
   private fun enableExposureNotification(@NonNull result: Result) {
@@ -145,6 +146,20 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
           result.error(ex.statusCode.toString(), ex.statusMessage, null)
         }
       }
+      "getExposureInfo" -> {
+        this.exposureNotification.getExposureInformation(ExposureNotificationClient.EXTRA_TOKEN).addOnSuccessListener {
+          result.success(Gson().toJson(it.map {
+            mapOf(
+              "date" to it.dateMillisSinceEpoch,
+              "duration" to it.durationMinutes,
+              "transmissionRiskLevel" to it.transmissionRiskLevel,
+              "totalRiskScore" to it.totalRiskScore)
+          }))
+        }.addOnFailureListener {
+          val ex = it as ApiException
+          result.error(ex.statusCode.toString(), ex.statusMessage, null)
+        }
+      }
       "detectExposures" -> {
         val filePaths = call.arguments as List<String>
         val localUrls = filePaths.map { File(it) }
@@ -164,7 +179,7 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
   }
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
-    this.channel.setMethodCallHandler(null)
+    GactPlugin.channel.setMethodCallHandler(null)
   }
 
   override fun onDetachedFromActivityForConfigChanges() {

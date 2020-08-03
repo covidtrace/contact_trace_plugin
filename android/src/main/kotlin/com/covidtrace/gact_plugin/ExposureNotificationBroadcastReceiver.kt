@@ -16,11 +16,7 @@ public class ExposureNotificationBroadcastReceiver: BroadcastReceiver() {
      var action:String = intent?.action ?: "";
     if (ExposureNotificationClient.ACTION_EXPOSURE_STATE_UPDATED == action
             || ExposureNotificationClient.ACTION_EXPOSURE_NOT_FOUND == action) {
-      // StateUpdatedWorker.runOnce(context);
-        Handler(Looper.getMainLooper()).post {
-            // Call the desired channel message here.
-        }
+        GactPlugin.channel.invokeMethod("exposuresDetected", action.toString())
     }
   }
-
 }
