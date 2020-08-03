@@ -84,10 +84,10 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
   private fun getExposureKeys(@NonNull result: Result) {
     this.exposureNotification.getTemporaryExposureKeyHistory().addOnSuccessListener {
       result.success(Gson().toJson(it.map { mapOf(
-              "keyData" to Base64.encodeToString(it.keyData, Base64.NO_WRAP),
-              "rollingPeriod" to it.rollingPeriod,
-              "rollingStartNumber" to it.rollingStartIntervalNumber,
-              "transmissionRiskLevel" to it.transmissionRiskLevel) }))
+        "keyData" to Base64.encodeToString(it.keyData, Base64.NO_WRAP),
+        "rollingPeriod" to it.rollingPeriod,
+        "rollingStartNumber" to it.rollingStartIntervalNumber,
+        "transmissionRiskLevel" to it.transmissionRiskLevel) }))
     }.addOnFailureListener {
       val ex = it as ApiException
       if (ex.statusCode == 6) {
@@ -134,7 +134,16 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
         this.getExposureKeys(result)
       }
       "getExposureSummary" -> {
-        result.notImplemented()
+        this.exposureNotification.getExposureSummary(ExposureNotificationClient.EXTRA_TOKEN).addOnSuccessListener {
+          result.success(Gson().toJson(mapOf(
+            "daysSinceLastExposure" to it.daysSinceLastExposure,
+            "matchedKeyCount" to it.matchedKeyCount,
+            "maximumRiskScore" to it.maximumRiskScore,
+            "attenuationDurations" to it.attenuationDurationsInMinutes)))
+        }.addOnFailureListener {
+          val ex = it as ApiException
+          result.error(ex.statusCode.toString(), ex.statusMessage, null)
+        }
       }
       "detectExposures" -> {
         val filePaths = call.arguments as List<String>
