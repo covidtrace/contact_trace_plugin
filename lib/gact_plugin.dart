@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:gact_plugin/diagnosisKeyURL.pb.dart';
@@ -109,8 +110,15 @@ enum ErrorCode {
   badFormat, // 15
 }
 
+const AndroidErrorCodes = {
+  17: ErrorCode.notEntitled,
+};
+
 ErrorCode errorFromException(err) {
-  return ErrorCode.values[int.parse(err.code)];
+  var code = int.parse(err.code);
+  return io.Platform.isAndroid
+      ? AndroidErrorCodes[code]
+      : ErrorCode.values[code];
 }
 
 /// An enumeration that indicates the status of authorization for the app.
@@ -132,6 +140,18 @@ enum AuthorizationStatus {
 class GactPlugin {
   static const MethodChannel _channel =
       const MethodChannel('com.covidtrace/gact_plugin');
+
+  static Completer<Iterable<ExposureInfo>> _detectExposuresResult;
+
+  static void setup() {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'exposuresDetected') {
+        var info = await getExposureInfo();
+        _detectExposuresResult.complete(info);
+        return;
+      }
+    });
+  }
 
   static Future<String> get platformVersion async {
     final String version = await _channel.invokeMethod('getPlatformVersion');
@@ -181,9 +201,16 @@ class GactPlugin {
   /// Detects exposures using the specified configuration to control the scoring algorithm.
   static Future<Iterable<ExposureInfo>> detectExposures(
       List<Uri> keyFiles) async {
-    String result = await _channel.invokeMethod(
+    Future result = _channel.invokeMethod(
         'detectExposures', keyFiles.map((u) => u.toFilePath()).toList());
-    List<dynamic> exposures = result != null ? jsonDecode(result) : [];
+
+    if (Platform.isAndroid) {
+      _detectExposuresResult = new Completer<Iterable<ExposureInfo>>();
+      return _detectExposuresResult.future;
+    }
+
+    String info = await result;
+    List<dynamic> exposures = result != null ? jsonDecode(info) : [];
 
     return exposures.map((e) => ExposureInfo(
           DateTime.fromMillisecondsSinceEpoch(e["date"].toInt()),
@@ -224,6 +251,22 @@ class GactPlugin {
       summary["matchedKeyCount"],
       summary["maximumRiskScore"],
     );
+  }
+
+  static Future<List<ExposureInfo>> getExposureInfo() async {
+    var result = await _channel.invokeMethod('getExposureInfo');
+    if (result == null) {
+      return null;
+    }
+
+    var infos = jsonDecode(result) as List;
+    return infos
+        .map((e) => ExposureInfo(
+            DateTime.fromMillisecondsSinceEpoch(e["date"].toInt()),
+            Duration(seconds: e["duration"]),
+            e["totalRiskScore"],
+            e["transmissionRiskLevel"]))
+        .toList();
   }
 
   /// Requests the temporary exposure keys from the user’s device to share with a server.
