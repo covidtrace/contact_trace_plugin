@@ -263,7 +263,7 @@ class GactPlugin {
     return infos
         .map((e) => ExposureInfo(
             DateTime.fromMillisecondsSinceEpoch(e["date"].toInt()),
-            Duration(seconds: e["duration"]),
+            Duration(minutes: e["duration"]),
             e["totalRiskScore"],
             e["transmissionRiskLevel"]))
         .toList();
