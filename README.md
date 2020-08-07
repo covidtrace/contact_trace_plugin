@@ -2,6 +2,14 @@
 
 A Flutter plugin that exposes the Google/Apple Exposure Notification API
 
+## Usage
+
+Make sure you call
+```dart
+GactPlugin.setup()
+```
+Before any usage of the plugin API.
+
 ## Generating protobuf dart files
 
 Follow the instructions to install the `protoc` CL tool here:
