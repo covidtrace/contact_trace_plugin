@@ -4,10 +4,7 @@ import com.google.gson.Gson
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.exposurenotification.ExposureConfiguration
-import com.google.android.gms.nearby.exposurenotification.ExposureInformation
 import com.google.android.gms.nearby.exposurenotification.ExposureNotificationClient
-import com.google.android.gms.nearby.exposurenotification.ExposureSummary
-import com.google.android.gms.nearby.exposurenotification.TemporaryExposureKey
 
 import android.app.Activity;
 import android.content.Context;

@@ -111,7 +111,9 @@ enum ErrorCode {
 }
 
 const AndroidErrorCodes = {
+  10: ErrorCode.badFormat,
   17: ErrorCode.notEntitled,
+  99: ErrorCode.unsupported,
 };
 
 ErrorCode errorFromException(err) {
@@ -135,6 +137,9 @@ enum AuthorizationStatus {
 
   /// The user has authorized this app to use Exposure Notification.
   Authorized,
+
+  // The Exposure Notification API is not supported on this device
+  Unsupported,
 }
 
 class GactPlugin {
@@ -165,7 +170,11 @@ class GactPlugin {
   /// This property reports the current authorization status of the app and never prompts the user. It can be used
   /// by the app for preflight authorization to determine if the user may be prompted.
   static Future<AuthorizationStatus> get authorizationStatus async {
-    int status = await _channel.invokeMethod('getAuthorizationStatus');
+    int status = await _channel
+        .invokeMethod('getAuthorizationStatus')
+        .timeout(Duration(seconds: 2), onTimeout: () {
+      return 4; // This is a workaround for Android GPS incompatibilty exception
+    });
 
     switch (status) {
       case 1:
@@ -174,6 +183,8 @@ class GactPlugin {
         return AuthorizationStatus.NotAuthorized;
       case 3:
         return AuthorizationStatus.Authorized;
+      case 4:
+        return AuthorizationStatus.Unsupported;
       default:
         return AuthorizationStatus.Unknown;
     }
