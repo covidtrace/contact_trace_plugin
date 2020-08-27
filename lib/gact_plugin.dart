@@ -170,11 +170,16 @@ class GactPlugin {
   /// This property reports the current authorization status of the app and never prompts the user. It can be used
   /// by the app for preflight authorization to determine if the user may be prompted.
   static Future<AuthorizationStatus> get authorizationStatus async {
-    int status = await _channel
-        .invokeMethod('getAuthorizationStatus')
-        .timeout(Duration(seconds: 2), onTimeout: () {
-      return 4; // This is a workaround for Android GPS incompatibilty exception
-    });
+    int status;
+    try {
+      status = await _channel
+          .invokeMethod('getAuthorizationStatus')
+          .timeout(Duration(seconds: 2), onTimeout: () {
+        return 4; // This is a workaround for Android GPS incompatibilty exception
+      });
+    } catch (err) {
+      status = 4;
+    }
 
     switch (status) {
       case 1:
