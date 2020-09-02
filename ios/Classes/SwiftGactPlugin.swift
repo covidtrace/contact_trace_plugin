@@ -3,6 +3,7 @@ import Flutter
 import UIKit
 import ExposureNotification
 
+@available(iOS 13.5, *)
 struct CodableDiagnosisKey: Codable, Equatable {
     let keyData: Data
     let rollingPeriod: ENIntervalNumber
@@ -10,6 +11,7 @@ struct CodableDiagnosisKey: Codable, Equatable {
     let transmissionRiskLevel: ENRiskLevel
 }
 
+@available(iOS 13.5, *)
 struct CodableExposureConfiguration: Codable {
     let minimumRiskScore: ENRiskScore
     let attenuationLevelValues: [ENRiskLevelValue]
@@ -22,6 +24,7 @@ struct CodableExposureConfiguration: Codable {
     let transmissionRiskWeight: Double
 }
 
+@available(iOS 13.5, *)
 struct Exposure: Codable {
     let date: Date
     let duration: TimeInterval
@@ -29,6 +32,7 @@ struct Exposure: Codable {
     let transmissionRiskLevel: ENRiskLevel
 }
 
+@available(iOS 13.5, *)
 struct ExposureSummary: Codable {
   let attenuationDurations: [Int]
   let daysSinceLastExposure: Int
@@ -142,6 +146,11 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     }
 
     self.manager.detectExposures(configuration: self.configuration, diagnosisKeyURLs: localURLs) { summary, err in
+      guard summary != nil else {
+        result(nil)
+        return
+      }
+
       if let err = err as? ENError {
         result(FlutterError(code: String(err.errorCode), message: ENErrorDomain, details: err.localizedDescription))
         return
