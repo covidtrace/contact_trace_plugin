@@ -165,7 +165,8 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
           this.result = result
         }.addOnFailureListener {
           val ex = it as ApiException
-          result.error(ex.statusCode.toString(), ex.statusMessage, null)
+          var args = listOf(ex.statusCode.toString(), ex.statusMessage)
+          GactPlugin.channel.invokeMethod("exposuresDetectedError", args)
         }
       }
       "setUserExplanation" -> {

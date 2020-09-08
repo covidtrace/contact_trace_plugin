@@ -150,10 +150,14 @@ class GactPlugin {
 
   static void setup() {
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'exposuresDetected') {
-        var info = await getExposureInfo();
-        _detectExposuresResult.complete(info);
-        return;
+      switch (call.method) {
+        case 'exposuresDetected':
+          var info = await getExposureInfo();
+          _detectExposuresResult.complete(info);
+          break;
+        case 'exposuresDetectedError':
+          _detectExposuresResult.completeError(call.arguments);
+          break;
       }
     });
   }
