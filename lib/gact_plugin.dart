@@ -85,8 +85,11 @@ class ExposureSummary {
   /// The highest risk score of all exposure incidents.
   final int maximumRiskScore;
 
+  /// Exposure summary meta data.
+  final Map<String, dynamic> metadata;
+
   ExposureSummary(this.attenuationDurations, this.daysSinceLastExposure,
-      this.matchedKeyCount, this.maximumRiskScore);
+      this.matchedKeyCount, this.maximumRiskScore, this.metadata);
 }
 
 /// Errors that the exposure notification framework issues.
@@ -146,13 +149,13 @@ class GactPlugin {
   static const MethodChannel _channel =
       const MethodChannel('com.covidtrace/gact_plugin');
 
-  static Completer<Iterable<ExposureInfo>> _detectExposuresResult;
+  static Completer<ExposureSummary> _detectExposuresResult;
 
   static void setup() {
     _channel.setMethodCallHandler((call) async {
       switch (call.method) {
         case 'exposuresDetected':
-          var info = await getExposureInfo();
+          var info = await getExposureSummary();
           _detectExposuresResult.complete(info);
           break;
         case 'exposuresDetectedError':
@@ -219,25 +222,27 @@ class GactPlugin {
   }
 
   /// Detects exposures using the specified configuration to control the scoring algorithm.
-  static Future<Iterable<ExposureInfo>> detectExposures(
-      List<Uri> keyFiles) async {
+  static Future<ExposureSummary> detectExposures(List<Uri> keyFiles) async {
     Future result = _channel.invokeMethod(
         'detectExposures', keyFiles.map((u) => u.toFilePath()).toList());
 
     if (Platform.isAndroid) {
-      _detectExposuresResult = new Completer<Iterable<ExposureInfo>>();
+      _detectExposuresResult = new Completer<ExposureSummary>();
       return _detectExposuresResult.future;
     }
 
     String info = await result;
-    List<dynamic> exposures = result != null ? jsonDecode(info) : [];
+    var summary = jsonDecode(info);
+    var durations =
+        (summary["attenuationDurations"] as List).cast<int>().toList();
 
-    return exposures.map((e) => ExposureInfo(
-          DateTime.fromMillisecondsSinceEpoch(e["date"].toInt()),
-          Duration(seconds: e["duration"]),
-          e['totalRiskScore'],
-          e["transmissionRiskLevel"],
-        ));
+    return ExposureSummary(
+      durations.map((d) => Duration(seconds: d)).toList(),
+      summary["daysSinceLastExposure"],
+      summary["matchedKeyCount"],
+      summary["maximumRiskScore"],
+      summary["metadata"],
+    );
   }
 
   static Future<void> inspectExportFile(Uri uri) async {
@@ -270,6 +275,7 @@ class GactPlugin {
       summary["daysSinceLastExposure"],
       summary["matchedKeyCount"],
       summary["maximumRiskScore"],
+      summary["metadata"],
     );
   }
 
@@ -283,7 +289,7 @@ class GactPlugin {
     return infos
         .map((e) => ExposureInfo(
             DateTime.fromMillisecondsSinceEpoch(e["date"].toInt()),
-            Duration(minutes: e["duration"]),
+            Duration(seconds: e["duration"]),
             e["totalRiskScore"],
             e["transmissionRiskLevel"]))
         .toList();

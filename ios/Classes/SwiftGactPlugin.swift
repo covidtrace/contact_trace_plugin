@@ -33,14 +33,6 @@ struct Exposure: Codable {
 }
 
 @available(iOS 13.5, *)
-struct ExposureSummary: Codable {
-  let attenuationDurations: [Int]
-  let daysSinceLastExposure: Int
-  let matchedKeyCount: UInt64
-  let maximumRiskScore: ENRiskLevel
-}
-
-@available(iOS 13.5, *)
 public class SwiftGactPlugin: NSObject, FlutterPlugin {
   private static var instance: SwiftGactPlugin = SwiftGactPlugin();
 
@@ -156,29 +148,32 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
         return
       }
 
-      self.manager.getExposureInfo(summary: summary!, userExplanation: self.userExplanation) { exposures, err in
-        if let err = err as? ENError {
-          result(FlutterError(code: String(err.errorCode), message: ENErrorDomain, details: err.localizedDescription))
-          return
-        }
+      self.exposureSummary = summary!
+      self.getExposureSummary(call, result)
+    }
+  }
 
-        self.exposureSummary = summary!
+  private func getExposureInfo(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    self.manager.getExposureInfo(summary: self.exposureSummary!, userExplanation: self.userExplanation) { exposures, err in
+      if let err = err as? ENError {
+        result(FlutterError(code: String(err.errorCode), message: ENErrorDomain, details: err.localizedDescription))
+        return
+      }
 
-        let newExposures = exposures!.map { exposure in
-          Exposure(date: exposure.date,
-                   duration: exposure.duration,
-                   totalRiskScore: exposure.totalRiskScore,
-                   transmissionRiskLevel: exposure.transmissionRiskLevel)
-        }
+      let newExposures = exposures!.map { exposure in
+        Exposure(date: exposure.date,
+                  duration: exposure.duration,
+                  totalRiskScore: exposure.totalRiskScore,
+                  transmissionRiskLevel: exposure.transmissionRiskLevel)
+      }
 
-        do {
-          let encoder = JSONEncoder()
-          encoder.dateEncodingStrategy = .millisecondsSince1970
-          let json = try encoder.encode(newExposures)
-          result(String(data: json, encoding: .utf8))
-        } catch {
-          result(nil)
-        }
+      do {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        let json = try encoder.encode(newExposures)
+        result(String(data: json, encoding: .utf8))
+      } catch {
+        result(nil)
       }
     }
   }
@@ -190,15 +185,18 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
       return
     }
 
-    let codable = ExposureSummary(attenuationDurations: summary!.attenuationDurations.map { duration in
-          return duration.intValue
-        },
-        daysSinceLastExposure: summary!.daysSinceLastExposure,
-        matchedKeyCount: summary!.matchedKeyCount,
-        maximumRiskScore: summary!.maximumRiskScore)
+    let codable = [
+        "attenuationDurations": summary!.attenuationDurations.map { duration in
+            return duration.intValue
+          },
+        "daysSinceLastExposure": summary!.daysSinceLastExposure,
+        "matchedKeyCount": summary!.matchedKeyCount,
+        "maximumRiskScore": summary!.maximumRiskScore,
+        "metadata": summary!.metadata!
+    ] as [String: Any]
 
     do {
-      let json = try JSONEncoder().encode(codable)
+      let json = try JSONSerialization.data(withJSONObject: codable)
       result(String(data: json, encoding: .utf8))
     } catch {
       result(nil)
@@ -263,6 +261,8 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
       detectExposures(call, result)
     case "getExposureSummary":
       getExposureSummary(call, result)
+    case "getExposureInfo":
+      getExposureInfo(call, result)
     case "getExposureKeys":
       getExposureKeys(call, result)
     case "setUserExplanation":
