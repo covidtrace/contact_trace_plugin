@@ -23,6 +23,7 @@ import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry.ActivityResultListener
 import io.flutter.plugin.common.PluginRegistry.Registrar
 import java.io.File
+import kotlin.random.Random
 
 
 const val REQUEST_CODE_START_EXPOSURE_NOTIFICATION = 1111
@@ -35,6 +36,7 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
   lateinit var applicationContext: Context;
   lateinit var exposureNotification: ExposureNotificationClient;
   lateinit var result: Result;
+  var token: String = ExposureNotificationClient.EXTRA_TOKEN;
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     this.onAttached(flutterPluginBinding.getApplicationContext(), flutterPluginBinding.getFlutterEngine().getDartExecutor())
@@ -132,7 +134,7 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
         this.getExposureKeys(result)
       }
       "getExposureSummary" -> {
-        this.exposureNotification.getExposureSummary(ExposureNotificationClient.EXTRA_TOKEN).addOnSuccessListener {
+        this.exposureNotification.getExposureSummary(this.token).addOnSuccessListener {
           result.success(Gson().toJson(mapOf(
             "daysSinceLastExposure" to it.daysSinceLastExposure,
             "matchedKeyCount" to it.matchedKeyCount,
@@ -144,11 +146,11 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
         }
       }
       "getExposureInfo" -> {
-        this.exposureNotification.getExposureInformation(ExposureNotificationClient.EXTRA_TOKEN).addOnSuccessListener {
+        this.exposureNotification.getExposureInformation(this.token).addOnSuccessListener {
           result.success(Gson().toJson(it.map {
             mapOf(
               "date" to it.dateMillisSinceEpoch,
-              "duration" to it.durationMinutes,
+              "duration" to it.durationMinutes * 60,
               "transmissionRiskLevel" to it.transmissionRiskLevel,
               "totalRiskScore" to it.totalRiskScore)
           }))
@@ -160,8 +162,9 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
       "detectExposures" -> {
         val filePaths = call.arguments as List<String>
         val localUrls = filePaths.map { File(it) }
-
-        this.exposureNotification.provideDiagnosisKeys(localUrls, this.configuration, ExposureNotificationClient.EXTRA_TOKEN).addOnSuccessListener {
+        // Generate random string for each exposure detection session
+        this.token = Random.nextBytes(20).toString()
+        this.exposureNotification.provideDiagnosisKeys(localUrls, this.configuration, this.token).addOnSuccessListener {
           this.result = result
         }.addOnFailureListener {
           val ex = it as ApiException
