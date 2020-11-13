@@ -58,11 +58,13 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
     }
 
     lateinit var channel: MethodChannel;
+    var exposureCheckComplete = true;
   }
 
   fun onAttached(context: Context, messenger: BinaryMessenger) {
     this.applicationContext = context
     this.exposureNotification = Nearby.getExposureNotificationClient(this.applicationContext)
+
     GactPlugin.channel = MethodChannel(messenger, "com.covidtrace/gact_plugin")
     GactPlugin.channel.setMethodCallHandler(this)
   }
@@ -105,6 +107,14 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
       "getAuthorizationStatus" -> {
         this.exposureNotification.isEnabled().addOnSuccessListener {
           result.success(if (it) 3 else 2)
+        }.addOnFailureListener {
+          val ex = it as ApiException
+          result.error(ex.statusCode.toString(), ex.statusMessage, null)
+        }
+      }
+      "getExposureNotificationStatus" -> {
+        this.exposureNotification.getStatus().addOnSuccessListener {
+          result.success(it.toString())
         }.addOnFailureListener {
           val ex = it as ApiException
           result.error(ex.statusCode.toString(), ex.statusMessage, null)
@@ -160,6 +170,8 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
         }
       }
       "detectExposures" -> {
+        exposureCheckComplete = false
+
         val filePaths = call.arguments as List<String>
         val localUrls = filePaths.map { File(it) }
         // Generate random string for each exposure detection session
@@ -172,6 +184,9 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
           GactPlugin.channel.invokeMethod("exposuresDetectedError", args)
         }
       }
+      "exposureCheckComplete" -> {
+        result.success(exposureCheckComplete)
+      }
       "setUserExplanation" -> {
         result.success(null)
       }
@@ -181,14 +196,17 @@ public class GactPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, Activi
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     GactPlugin.channel.setMethodCallHandler(null)
+    println("onDetachedFromEngine")
   }
 
   override fun onDetachedFromActivityForConfigChanges() {
     // TODO("Not yet implemented")
+    println("onDetachedFromActivityForConfigChanges")
   }
 
   override fun onDetachedFromActivity() {
     // TODO("Not yet implemented")
+    println("onDetachedFromActivity")
   }
 
   override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {

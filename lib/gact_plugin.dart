@@ -145,25 +145,21 @@ enum AuthorizationStatus {
   Unsupported,
 }
 
+enum ExposureNotificationStatus {
+  Unknown, // 0
+  Active, // 1
+  Disabled, // 2
+  BluetoothOff, // 3
+  Restricted, // 4
+  Paused, // 5
+  NotAuthorized, // 6
+}
+
 class GactPlugin {
   static const MethodChannel _channel =
       const MethodChannel('com.covidtrace/gact_plugin');
 
   static Completer<ExposureSummary> _detectExposuresResult;
-
-  static void setup() {
-    _channel.setMethodCallHandler((call) async {
-      switch (call.method) {
-        case 'exposuresDetected':
-          var info = await getExposureSummary();
-          _detectExposuresResult.complete(info);
-          break;
-        case 'exposuresDetectedError':
-          _detectExposuresResult.completeError(call.arguments);
-          break;
-      }
-    });
-  }
 
   static Future<String> get platformVersion async {
     final String version = await _channel.invokeMethod('getPlatformVersion');
@@ -202,6 +198,55 @@ class GactPlugin {
     }
   }
 
+  static Future<ExposureNotificationStatus>
+      get exposureNotificationStatus async {
+    var status;
+    try {
+      status = await _channel
+          .invokeMethod('getExposureNotificationStatus')
+          .timeout(Duration(seconds: 2), onTimeout: () {
+        return 0;
+      });
+    } catch (err) {
+      status = 0;
+    }
+
+    // Android API returns a set serialized as a string, eg: [BLUETOOTH_DISABLED, INACTIVATED]
+    // See: https://developers.google.com/android/reference/com/google/android/gms/nearby/exposurenotification/ExposureNotificationStatus
+    if (status is String) {
+      var set = Set.from(status.substring(1, status.length - 1).split(', '));
+      if (set.contains('ACTIVATED')) {
+        status = 1;
+      } else if (set.contains('BLUETOOTH_DISABLED')) {
+        status = 3;
+      } else if (set.contains('INACTIVATED')) {
+        status = 2;
+      } else if (set.contains('FOCUS_LOST')) {
+        status = 6;
+      } else {
+        status = 0;
+      }
+    }
+
+    switch (status) {
+      case 1:
+        return ExposureNotificationStatus.Active;
+      case 2:
+        return ExposureNotificationStatus.Disabled;
+      case 3:
+        return ExposureNotificationStatus.BluetoothOff;
+      case 4:
+        return ExposureNotificationStatus.Restricted;
+      case 5:
+        return ExposureNotificationStatus.Paused;
+      case 6:
+        return ExposureNotificationStatus.NotAuthorized;
+      case 0:
+      default:
+        return ExposureNotificationStatus.Unknown;
+    }
+  }
+
   /// Enables exposure notification.
   static Future<AuthorizationStatus> enableExposureNotification() async {
     await _channel.invokeMethod('enableExposureNotification');
@@ -228,6 +273,16 @@ class GactPlugin {
 
     if (Platform.isAndroid) {
       _detectExposuresResult = new Completer<ExposureSummary>();
+
+      Timer.periodic(Duration(seconds: 5), (timer) async {
+        var done = await _channel.invokeMethod('exposureCheckComplete');
+        if (done) {
+          timer.cancel();
+          var info = await getExposureSummary();
+          _detectExposuresResult.complete(info);
+        }
+      });
+
       return _detectExposuresResult.future;
     }
 

@@ -86,6 +86,10 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
     result(ENManager.authorizationStatus.rawValue)
   }
 
+  private func getExposureNotificationStatus(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    result(manager.exposureNotificationStatus.rawValue)
+  }
+
   // Changes settings to enable Exposure Notification after authorization by the user. 
   private func enableExposureNotification(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
     print("enableExposureNotification \(self.manager.exposureNotificationEnabled) \(ENManager.authorizationStatus.rawValue)")
@@ -255,6 +259,8 @@ public class SwiftGactPlugin: NSObject, FlutterPlugin {
       setExposureConfiguration(call, result)
     case "getAuthorizationStatus":
       getAuthorizationStatus(call, result)
+    case "getExposureNotificationStatus":
+      getExposureNotificationStatus(call, result)
     case "enableExposureNotification":
       enableExposureNotification(call, result)
     case "detectExposures":

@@ -16,7 +16,7 @@ public class ExposureNotificationBroadcastReceiver: BroadcastReceiver() {
      var action:String = intent?.action ?: "";
     if (ExposureNotificationClient.ACTION_EXPOSURE_STATE_UPDATED == action
             || ExposureNotificationClient.ACTION_EXPOSURE_NOT_FOUND == action) {
-        GactPlugin.channel.invokeMethod("exposuresDetected", action.toString())
+        GactPlugin.exposureCheckComplete = true
     }
   }
 }
